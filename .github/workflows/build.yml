@@ -10,6 +10,9 @@ jobs:
   build:
     runs-on: ubuntu-24.04
 
+    env:
+      ANDROID_NDK_VERSION: 27.2.12479018
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,8 +34,8 @@ jobs:
             flex \
             gettext \
             pkg-config \
-            libglvnd-dev \
             glslang-tools \
+            libglvnd-dev \
             libdrm-dev \
             libelf-dev \
             libexpat1-dev \
@@ -53,11 +56,6 @@ jobs:
             libzstd-dev \
             cmake
 
-      - name: Check shader tools
-        run: |
-          glslangValidator --version
-          pkg-config --modversion libglvnd || true
-
       - name: Install Meson
         run: |
           python3 -m venv "$RUNNER_TEMP/meson-venv"
@@ -72,12 +70,30 @@ jobs:
 
           "$RUNNER_TEMP/meson-venv/bin/meson" --version
 
-      - name: Check build tools
+      - name: Install Android SDK and NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
         run: |
+          sdkmanager "ndk;${ANDROID_NDK_VERSION}"
+
+          echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Check Android toolchain
+        run: |
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "ANDROID_NDK=$ANDROID_NDK"
+
+          test -d "$ANDROID_NDK"
+
+          "$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" \
+            --version
+
+      - name: Check shader tools
+        run: |
+          glslangValidator --version
           meson --version
           ninja --version
-          python3 --version
-          git --version
 
       - name: Clone Mesa
         run: |
@@ -86,6 +102,14 @@ jobs:
 
           cd mesa
           git log -1 --oneline
+
+      - name: Show Android NDK
+        run: |
+          find "$ANDROID_NDK" \
+            -maxdepth 3 \
+            -type f \
+            -name 'android.toolchain.cmake' \
+            -print
 
       - name: Configure Mesa
         working-directory: mesa
@@ -101,6 +125,19 @@ jobs:
         run: |
           meson compile -C build
 
+      - name: Find Turnip library
+        run: |
+          echo "=== Searching for Vulkan/Freedreno libraries ==="
+
+          find mesa/build \
+            -type f \
+            \( \
+              -name 'libvulkan_freedreno.so' \
+              -o -name '*freedreno*.so' \
+              -o -name '*turnip*.so' \
+            \) \
+            -print
+
       - name: Collect artifacts
         run: |
           mkdir -p dist
@@ -109,15 +146,16 @@ jobs:
             -type f \
             \( \
               -name 'libvulkan_freedreno.so' \
-              -o -name 'libvulkan_freedreno.so.*' \
+              -o -name '*freedreno*.so' \
+              -o -name '*turnip*.so' \
             \) \
             -exec cp -v {} dist/ \; || true
 
-          echo "=== Built files ==="
+          echo "=== Artifact directory ==="
           find dist -type f -ls
 
           if [ -z "$(find dist -type f -print -quit)" ]; then
-            echo "ERROR: No Turnip Vulkan library was produced."
+            echo "ERROR: No Vulkan/Freedreno library was produced."
             exit 1
           fi
 
