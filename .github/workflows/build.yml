@@ -70,30 +70,55 @@ jobs:
 
           "$RUNNER_TEMP/meson-venv/bin/meson" --version
 
-      - name: Install Android SDK and NDK
-        uses: android-actions/setup-android@v3
+      - name: Locate Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+          if [ -z "$ANDROID_SDK_ROOT" ]; then
+            export ANDROID_SDK_ROOT="$ANDROID_HOME"
+            echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          fi
 
       - name: Install Android NDK
         run: |
-          sdkmanager "ndk;${ANDROID_NDK_VERSION}"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager"
+          fi
+
+          echo "Using sdkmanager:"
+          echo "$SDKMANAGER"
+
+          "$SDKMANAGER" --version
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          "$SDKMANAGER" \
+            "ndk;${ANDROID_NDK_VERSION}"
 
           echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
 
-      - name: Check Android toolchain
+      - name: Verify Android NDK
         run: |
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
           echo "ANDROID_NDK=$ANDROID_NDK"
 
           test -d "$ANDROID_NDK"
 
+          echo "NDK directory:"
+          ls -la "$ANDROID_NDK"
+
+          echo "Clang:"
           "$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" \
             --version
 
-      - name: Check shader tools
+      - name: Check build tools
         run: |
-          glslangValidator --version
           meson --version
           ninja --version
+          glslangValidator --version
+          python3 --version
 
       - name: Clone Mesa
         run: |
@@ -101,15 +126,9 @@ jobs:
             https://gitlab.freedesktop.org/mesa/mesa.git mesa
 
           cd mesa
-          git log -1 --oneline
 
-      - name: Show Android NDK
-        run: |
-          find "$ANDROID_NDK" \
-            -maxdepth 3 \
-            -type f \
-            -name 'android.toolchain.cmake' \
-            -print
+          echo "Mesa commit:"
+          git log -1 --oneline
 
       - name: Configure Mesa
         working-directory: mesa
@@ -120,14 +139,14 @@ jobs:
             -Dgallium-drivers= \
             -Dplatforms=android
 
-      - name: Build
+      - name: Build Mesa
         working-directory: mesa
         run: |
           meson compile -C build
 
-      - name: Find Turnip library
+      - name: Find Turnip
         run: |
-          echo "=== Searching for Vulkan/Freedreno libraries ==="
+          echo "=== Searching for Vulkan libraries ==="
 
           find mesa/build \
             -type f \
@@ -151,11 +170,11 @@ jobs:
             \) \
             -exec cp -v {} dist/ \; || true
 
-          echo "=== Artifact directory ==="
+          echo "=== dist ==="
           find dist -type f -ls
 
           if [ -z "$(find dist -type f -print -quit)" ]; then
-            echo "ERROR: No Vulkan/Freedreno library was produced."
+            echo "ERROR: No Turnip/Freedreno library was produced."
             exit 1
           fi
 
