@@ -59,24 +59,49 @@ jobs:
 
           "$RUNNER_TEMP/meson-venv/bin/meson" --version
 
-      - name: Locate Android SDK
+      - name: Find Android SDK
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "=== Android environment ==="
+          echo "ANDROID_HOME=${ANDROID_HOME:-}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-}"
 
-          if [ -z "$ANDROID_SDK_ROOT" ]; then
-            echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "=== Searching for sdkmanager ==="
+
+          SDKMANAGER="$(find /usr/local/lib/android \
+            "$HOME" \
+            -type f \
+            -name sdkmanager \
+            -perm -111 \
+            2>/dev/null | head -n 1)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager was not found."
+            echo "=== /usr/local/lib/android ==="
+            ls -laR /usr/local/lib/android 2>/dev/null || true
+            exit 1
           fi
+
+          SDKMANAGER_DIR="$(dirname "$SDKMANAGER")"
+          SDK_ROOT="$(cd "$SDKMANAGER_DIR/../../.." && pwd)"
+
+          echo "Found sdkmanager:"
+          echo "$SDKMANAGER"
+
+          echo "Detected SDK root:"
+          echo "$SDK_ROOT"
+
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
 
       - name: Install Android NDK
         run: |
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager"
-
-          echo "Using sdkmanager: $SDKMANAGER"
+          echo "Using:"
+          echo "$SDKMANAGER"
 
           "$SDKMANAGER" --version
 
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
           "$SDKMANAGER" \
             "ndk;${ANDROID_NDK_VERSION}"
@@ -85,12 +110,32 @@ jobs:
 
       - name: Verify Android NDK
         run: |
+          echo "ANDROID_NDK=$ANDROID_NDK"
+
           test -d "$ANDROID_NDK"
 
-          echo "NDK: $ANDROID_NDK"
+          CLANG="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang"
 
-          "$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang" \
-            --version
+          if [ ! -x "$CLANG" ]; then
+            echo "ERROR: Android AArch64 clang not found:"
+            echo "$CLANG"
+
+            find "$ANDROID_NDK/toolchains/llvm/prebuilt" \
+              -type f \
+              -name '*aarch64*clang*' \
+              -print
+
+            exit 1
+          fi
+
+          "$CLANG" --version
+
+      - name: Check build tools
+        run: |
+          meson --version
+          ninja --version
+          glslangValidator --version
+          python3 --version
 
       - name: Clone Mesa
         run: |
@@ -124,7 +169,6 @@ jobs:
           endian = 'little'
           EOF
 
-          echo "=== Android cross file ==="
           cat "$RUNNER_TEMP/meson-cross/android-aarch64.ini"
 
       - name: Configure Turnip
