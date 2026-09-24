@@ -53,10 +53,23 @@ jobs:
       - name: Install Meson
         run: |
           python3 -m venv "$RUNNER_TEMP/meson-venv"
-          "$RUNNER_TEMP/meson-venv/bin/python" -m pip install --upgrade pip
-          "$RUNNER_TEMP/meson-venv/bin/python" -m pip install "meson>=1.4.0"
+
+          "$RUNNER_TEMP/meson-venv/bin/python" \
+            -m pip install --upgrade pip
+
+          "$RUNNER_TEMP/meson-venv/bin/python" \
+            -m pip install "meson>=1.4.0"
+
           echo "$RUNNER_TEMP/meson-venv/bin" >> "$GITHUB_PATH"
+
+          "$RUNNER_TEMP/meson-venv/bin/meson" --version
+
+      - name: Check build tools
+        run: |
           meson --version
+          ninja --version
+          python3 --version
+          git --version
 
       - name: Clone Mesa
         run: |
