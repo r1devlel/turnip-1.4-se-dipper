@@ -17,6 +17,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             git \
             ninja-build \
@@ -30,6 +31,8 @@ jobs:
             flex \
             gettext \
             pkg-config \
+            libglvnd-dev \
+            glslang-tools \
             libdrm-dev \
             libelf-dev \
             libexpat1-dev \
@@ -49,6 +52,11 @@ jobs:
             zlib1g-dev \
             libzstd-dev \
             cmake
+
+      - name: Check shader tools
+        run: |
+          glslangValidator --version
+          pkg-config --modversion libglvnd || true
 
       - name: Install Meson
         run: |
