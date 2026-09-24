@@ -3,7 +3,8 @@ name: Build Turnip 1.4 SE
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   build:
@@ -17,19 +18,51 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git meson ninja-build python3-mako python3-ply \
-            python3-setuptools bison flex gettext pkg-config \
-            libdrm-dev libelf-dev libexpat1-dev \
-            libx11-dev libxext-dev libxdamage-dev libxfixes-dev \
-            libxrandr-dev libwayland-dev wayland-protocols \
-            libxcb-dri2-0-dev libxcb-dri3-dev libxcb-present-dev \
-            libxcb-sync-dev libxcb1-dev libxshmfence-dev \
-            zlib1g-dev libzstd-dev cmake
+            git \
+            ninja-build \
+            python3 \
+            python3-venv \
+            python3-pip \
+            python3-mako \
+            python3-ply \
+            python3-setuptools \
+            bison \
+            flex \
+            gettext \
+            pkg-config \
+            libdrm-dev \
+            libelf-dev \
+            libexpat1-dev \
+            libx11-dev \
+            libxext-dev \
+            libxdamage-dev \
+            libxfixes-dev \
+            libxrandr-dev \
+            libwayland-dev \
+            wayland-protocols \
+            libxcb-dri2-0-dev \
+            libxcb-dri3-dev \
+            libxcb-present-dev \
+            libxcb-sync-dev \
+            libxcb1-dev \
+            libxshmfence-dev \
+            zlib1g-dev \
+            libzstd-dev \
+            cmake
+
+      - name: Install Meson
+        run: |
+          python3 -m venv "$RUNNER_TEMP/meson-venv"
+          "$RUNNER_TEMP/meson-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/meson-venv/bin/python" -m pip install "meson>=1.4.0"
+          echo "$RUNNER_TEMP/meson-venv/bin" >> "$GITHUB_PATH"
+          meson --version
 
       - name: Clone Mesa
         run: |
           git clone --depth=1 \
             https://gitlab.freedesktop.org/mesa/mesa.git mesa
+
           cd mesa
           git log -1 --oneline
 
@@ -50,11 +83,17 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p dist
-          find mesa/build -type f \
+
+          find mesa/build \
+            -type f \
             -name 'libvulkan_freedreno.so' \
             -exec cp -v {} dist/ \; || true
 
-          tar -czf turnip-1.4-se-dipper-baseline.tar.gz \
+          echo "=== Built files ==="
+          find dist -type f -ls
+
+          tar -czf \
+            turnip-1.4-se-dipper-baseline.tar.gz \
             -C dist .
 
       - name: Upload artifact
