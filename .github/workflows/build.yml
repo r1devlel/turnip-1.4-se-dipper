@@ -86,7 +86,7 @@ jobs:
             -Dbuildtype=release \
             -Dvulkan-drivers=freedreno \
             -Dgallium-drivers= \
-            -Dplatforms=surfaceless
+            -Dplatforms=android
 
       - name: Build
         working-directory: mesa
@@ -99,11 +99,19 @@ jobs:
 
           find mesa/build \
             -type f \
-            -name 'libvulkan_freedreno.so' \
+            \( \
+              -name 'libvulkan_freedreno.so' \
+              -o -name 'libvulkan_freedreno.so.*' \
+            \) \
             -exec cp -v {} dist/ \; || true
 
           echo "=== Built files ==="
           find dist -type f -ls
+
+          if [ -z "$(find dist -type f -print -quit)" ]; then
+            echo "ERROR: No Turnip Vulkan library was produced."
+            exit 1
+          fi
 
           tar -czf \
             turnip-1.4-se-dipper-baseline.tar.gz \
