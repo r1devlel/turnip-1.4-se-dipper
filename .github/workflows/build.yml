@@ -1,0 +1,64 @@
+name: Build Turnip 1.4 SE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git meson ninja-build python3-mako python3-ply \
+            python3-setuptools bison flex gettext pkg-config \
+            libdrm-dev libelf-dev libexpat1-dev \
+            libx11-dev libxext-dev libxdamage-dev libxfixes-dev \
+            libxrandr-dev libwayland-dev wayland-protocols \
+            libxcb-dri2-0-dev libxcb-dri3-dev libxcb-present-dev \
+            libxcb-sync-dev libxcb1-dev libxshmfence-dev \
+            zlib1g-dev libzstd-dev cmake
+
+      - name: Clone Mesa
+        run: |
+          git clone --depth=1 \
+            https://gitlab.freedesktop.org/mesa/mesa.git mesa
+          cd mesa
+          git log -1 --oneline
+
+      - name: Configure Mesa
+        working-directory: mesa
+        run: |
+          meson setup build \
+            -Dbuildtype=release \
+            -Dvulkan-drivers=freedreno \
+            -Dgallium-drivers= \
+            -Dplatforms=surfaceless
+
+      - name: Build
+        working-directory: mesa
+        run: |
+          meson compile -C build
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          find mesa/build -type f \
+            -name 'libvulkan_freedreno.so' \
+            -exec cp -v {} dist/ \; || true
+
+          tar -czf turnip-1.4-se-dipper-baseline.tar.gz \
+            -C dist .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: turnip-1.4-se-dipper-baseline
+          path: turnip-1.4-se-dipper-baseline.tar.gz
