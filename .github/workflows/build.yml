@@ -45,7 +45,7 @@ jobs:
             libzstd-dev \
             cmake
 
-      - name: Install Meson
+      - name: Setup Python build environment
         run: |
           python3 -m venv "$RUNNER_TEMP/meson-venv"
 
@@ -53,19 +53,30 @@ jobs:
             -m pip install --upgrade pip
 
           "$RUNNER_TEMP/meson-venv/bin/python" \
-            -m pip install "meson>=1.4.0"
+            -m pip install \
+              "meson>=1.4.0" \
+              packaging \
+              setuptools \
+              wheel \
+              mako \
+              ply
 
           echo "$RUNNER_TEMP/meson-venv/bin" >> "$GITHUB_PATH"
 
+          echo "=== Python ==="
+          "$RUNNER_TEMP/meson-venv/bin/python" --version
+
+          echo "=== Meson ==="
           "$RUNNER_TEMP/meson-venv/bin/meson" --version
+
+          echo "=== Python modules ==="
+          "$RUNNER_TEMP/meson-venv/bin/python" -c \
+            "import packaging, setuptools, mako, ply; print('All Python modules OK')"
 
       - name: Find Android SDK
         run: |
-          echo "=== Android environment ==="
           echo "ANDROID_HOME=${ANDROID_HOME:-}"
           echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-}"
-
-          echo "=== Searching for sdkmanager ==="
 
           SDKMANAGER="$(find /usr/local/lib/android \
             "$HOME" \
@@ -76,8 +87,10 @@ jobs:
 
           if [ -z "$SDKMANAGER" ]; then
             echo "ERROR: sdkmanager was not found."
-            echo "=== /usr/local/lib/android ==="
+
+            echo "=== Android SDK tree ==="
             ls -laR /usr/local/lib/android 2>/dev/null || true
+
             exit 1
           fi
 
@@ -96,7 +109,7 @@ jobs:
 
       - name: Install Android NDK
         run: |
-          echo "Using:"
+          echo "Using sdkmanager:"
           echo "$SDKMANAGER"
 
           "$SDKMANAGER" --version
@@ -116,26 +129,27 @@ jobs:
 
           CLANG="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang"
 
-          if [ ! -x "$CLANG" ]; then
-            echo "ERROR: Android AArch64 clang not found:"
-            echo "$CLANG"
-
-            find "$ANDROID_NDK/toolchains/llvm/prebuilt" \
-              -type f \
-              -name '*aarch64*clang*' \
-              -print
-
-            exit 1
-          fi
+          test -x "$CLANG"
 
           "$CLANG" --version
 
       - name: Check build tools
         run: |
-          meson --version
+          echo "=== Python used by Meson ==="
+          "$RUNNER_TEMP/meson-venv/bin/python" --version
+
+          echo "=== packaging ==="
+          "$RUNNER_TEMP/meson-venv/bin/python" -c \
+            "import packaging; print(packaging.__version__)"
+
+          echo "=== Meson ==="
+          "$RUNNER_TEMP/meson-venv/bin/meson" --version
+
+          echo "=== Ninja ==="
           ninja --version
+
+          echo "=== glslang ==="
           glslangValidator --version
-          python3 --version
 
       - name: Clone Mesa
         run: |
@@ -143,6 +157,7 @@ jobs:
             https://gitlab.freedesktop.org/mesa/mesa.git mesa
 
           cd mesa
+
           git log -1 --oneline
 
       - name: Create Android cross file
@@ -174,7 +189,9 @@ jobs:
       - name: Configure Turnip
         working-directory: mesa
         run: |
-          meson setup build-android-aarch64 \
+          set -o pipefail
+
+          "$RUNNER_TEMP/meson-venv/bin/meson" setup build-android-aarch64 \
             --cross-file "$RUNNER_TEMP/meson-cross/android-aarch64.ini" \
             -Dbuildtype=release \
             -Dplatforms=android \
@@ -184,12 +201,35 @@ jobs:
             -Degl=disabled \
             -Dgallium-drivers= \
             -Dvulkan-drivers=freedreno \
-            -Dfreedreno-kmds=kgsl
+            -Dfreedreno-kmds=kgsl \
+            2>&1 | tee configure.log
+
+      - name: Dump Meson diagnostics
+        if: failure()
+        working-directory: mesa
+        run: |
+          echo "========================================"
+          echo "MESON LOG"
+          echo "========================================"
+
+          if [ -f build-android-aarch64/meson-logs/meson-log.txt ]; then
+            cat build-android-aarch64/meson-logs/meson-log.txt
+          fi
+
+          echo "========================================"
+          echo "CONFIGURE LOG"
+          echo "========================================"
+
+          if [ -f configure.log ]; then
+            cat configure.log
+          fi
 
       - name: Build Turnip
         working-directory: mesa
         run: |
-          meson compile -C build-android-aarch64
+          "$RUNNER_TEMP/meson-venv/bin/meson" \
+            compile \
+            -C build-android-aarch64
 
       - name: Find Turnip
         run: |
