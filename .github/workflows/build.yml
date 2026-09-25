@@ -44,7 +44,7 @@ jobs:
             zlib1g-dev \
             libzstd-dev \
             cmake
-
+            
       - name: Setup Python build environment
         run: |
           python3 -m venv "$RUNNER_TEMP/meson-venv"
@@ -59,7 +59,8 @@ jobs:
               setuptools \
               wheel \
               mako \
-              ply
+              ply \
+              pyyaml
 
           echo "$RUNNER_TEMP/meson-venv/bin" >> "$GITHUB_PATH"
 
@@ -71,8 +72,8 @@ jobs:
 
           echo "=== Python modules ==="
           "$RUNNER_TEMP/meson-venv/bin/python" -c \
-            "import packaging, setuptools, mako, ply; print('All Python modules OK')"
-
+            "import packaging, setuptools, mako, ply, yaml; print('All Python modules OK')"
+      
       - name: Find Android SDK
         run: |
           echo "ANDROID_HOME=${ANDROID_HOME:-}"
