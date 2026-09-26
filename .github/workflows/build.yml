@@ -12,31 +12,26 @@ runs-on: ubuntu-24.04
 
 ```
 env:
-  ANDROID_NDK_VERSION: 29.0.14206865
-  ANDROID_PLATFORM: 35
-  MESA_BUILD_DIR: build
-  MESA_INSTALL_DIR: install
+  ANDROID_NDK_VERSION: "29.0.14206865"
+  ANDROID_PLATFORM: "35"
+  MESA_BUILD_DIR: "build"
+  MESA_INSTALL_DIR: "install"
 
 steps:
-  - name: Checkout workflow repository
+  - name: Checkout
     uses: actions/checkout@v4
 
-  - name: Install system dependencies
+  - name: Install dependencies
     run: |
       sudo apt-get update
-
       sudo apt-get install -y \
         git \
         python3 \
         python3-pip \
         python3-venv \
-        python3-packaging \
         ninja-build \
         pkg-config \
-        meson \
         build-essential \
-        clang \
-        llvm \
         libglvnd-dev \
         glslang-tools \
         bison \
@@ -55,17 +50,14 @@ steps:
         libxcb-xfixes0-dev \
         libxshmfence-dev \
         libxxf86vm-dev \
-        libxxf86vm-dev \
         libvulkan-dev \
         zlib1g-dev
 
-  - name: Setup Python build environment
+  - name: Setup Python
     run: |
       python3 -m venv .venv
       . .venv/bin/activate
-
       python -m pip install --upgrade pip
-
       python -m pip install \
         meson \
         packaging \
@@ -74,7 +66,6 @@ steps:
         mako \
         ply \
         pyyaml
-
       meson --version
       python --version
 
@@ -98,22 +89,16 @@ steps:
 
       if [ -z "$SDKMANAGER" ]; then
         echo "sdkmanager not found"
-        echo "ANDROID_HOME=$ANDROID_HOME"
-        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-        find "$HOME" -name sdkmanager -type f 2>/dev/null || true
         exit 1
       fi
 
       echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-      echo "Using sdkmanager: $SDKMANAGER"
 
-  - name: Accept Android SDK licenses
-    run: |
-      yes | "$SDKMANAGER" --licenses || true
-
-  - name: Install Android NDK and platform
+  - name: Install Android NDK
     run: |
       set -eux
+
+      yes | "$SDKMANAGER" --licenses || true
 
       "$SDKMANAGER" \
         "platforms;android-${ANDROID_PLATFORM}" \
@@ -121,32 +106,16 @@ steps:
 
       echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
 
-  - name: Verify Android Clang and LLD
+  - name: Verify toolchain
     run: |
       set -eux
 
       TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
-      CLANG="$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang"
-      CLANGXX="$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang++"
-      LLD="$TOOLCHAIN/ld.lld"
+      "$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang" --version
+      "$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang++" --version
+      "$TOOLCHAIN/ld.lld" --version
 
-      test -x "$CLANG"
-      test -x "$CLANGXX"
-      test -x "$LLD"
-
-      echo "===== CLANG ====="
-      "$CLANG" --version
-
-      echo
-      echo "===== CLANG++ ====="
-      "$CLANGXX" --version
-
-      echo
-      echo "===== LLD ====="
-      "$LLD" --version
-
-      echo
       echo "===== NDK ====="
       cat "$ANDROID_NDK_HOME/source.properties"
 
@@ -154,8 +123,7 @@ steps:
     run: |
       set -eux
 
-      git clone \
-        --depth=1 \
+      git clone --depth=1 \
         https://gitlab.freedesktop.org/mesa/mesa.git \
         mesa
 
@@ -164,11 +132,10 @@ steps:
       echo "===== MESA COMMIT ====="
       git rev-parse HEAD
 
-      echo
       echo "===== MESA VERSION ====="
       grep -n "MESA_VERSION" meson.build | head -10 || true
 
-  - name: Prepare Meson cross file
+  - name: Prepare cross file
     run: |
       set -eux
 
@@ -176,38 +143,39 @@ steps:
       SYSROOT="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
 
       cat > android-aarch64.ini <<EOF
-      [binaries]
-      c = '${TOOLCHAIN}/aarch64-linux-android${ANDROID_PLATFORM}-clang'
-      cpp = '${TOOLCHAIN}/aarch64-linux-android${ANDROID_PLATFORM}-clang++'
-      ar = '${TOOLCHAIN}/llvm-ar'
-      strip = '${TOOLCHAIN}/llvm-strip'
-      ranlib = '${TOOLCHAIN}/llvm-ranlib'
-      ld = '${TOOLCHAIN}/ld.lld'
+```
 
-      [host_machine]
-      system = 'android'
-      cpu_family = 'aarch64'
-      cpu = 'arm64'
-      endian = 'little'
+[binaries]
+c = '$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang'
+cpp = '$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang++'
+ar = '$TOOLCHAIN/llvm-ar'
+strip = '$TOOLCHAIN/llvm-strip'
+ranlib = '$TOOLCHAIN/llvm-ranlib'
+ld = '$TOOLCHAIN/ld.lld'
 
-      [properties]
-      sys_root = '${SYSROOT}'
-      EOF
+[host_machine]
+system = 'android'
+cpu_family = 'aarch64'
+cpu = 'arm64'
+endian = 'little'
 
+[properties]
+sys_root = '$SYSROOT'
+EOF
+
+```
       cat android-aarch64.ini
 
   - name: Configure Mesa
     run: |
       set -eux
 
-      source .venv/bin/activate
+      . .venv/bin/activate
 
-      cd mesa
-
-      meson setup "../${MESA_BUILD_DIR}" \
-        --cross-file ../android-aarch64.ini \
-        --prefix="/system" \
-        --libdir="lib64" \
+      meson setup "$MESA_BUILD_DIR" mesa \
+        --cross-file android-aarch64.ini \
+        --prefix=/system \
+        --libdir=lib64 \
         --buildtype=release \
         -Dplatforms=android \
         -Dplatform-sdk-version="${ANDROID_PLATFORM}" \
@@ -218,141 +186,93 @@ steps:
         -Dvulkan-drivers=freedreno \
         -Dfreedreno-kmds=kgsl
 
-  - name: Build Mesa Turnip
+  - name: Build Turnip
     run: |
       set -eux
 
-      source .venv/bin/activate
+      . .venv/bin/activate
 
       meson compile \
-        -C "${MESA_BUILD_DIR}" \
+        -C "$MESA_BUILD_DIR" \
         -j"$(nproc)"
 
-  - name: Find Turnip library
+  - name: Inspect Turnip
     run: |
       set -eux
 
-      echo "===== TURNIP LIBRARIES ====="
-
-      find "${MESA_BUILD_DIR}" \
+      DRIVER="$(find "$MESA_BUILD_DIR" \
         -type f \
-        \( \
-          -name "libvulkan_freedreno.so" \
-          -o \
-          -name "vulkan.turnip.so" \
-          -o \
-          -name "vulkan.adreno.so" \
-        \) \
-        -print
-
-  - name: Inspect Turnip library
-    run: |
-      set -eux
-
-      DRIVER="$(
-        find "${MESA_BUILD_DIR}" \
-          -type f \
-          -name "libvulkan_freedreno.so" \
-          | head -n 1
-      )"
+        -name "libvulkan_freedreno.so" \
+        | head -n 1)"
 
       if [ -z "$DRIVER" ]; then
-        echo "libvulkan_freedreno.so not found"
+        echo "Turnip library not found"
         exit 1
       fi
 
-      echo "Driver:"
-      echo "$DRIVER"
-
-      mkdir -p "${MESA_INSTALL_DIR}"
+      mkdir -p "$MESA_INSTALL_DIR"
 
       cp "$DRIVER" \
-        "${MESA_INSTALL_DIR}/libvulkan_freedreno.so"
+        "$MESA_INSTALL_DIR/libvulkan_freedreno.so"
 
-      echo
       echo "===== FILE ====="
-      file "${MESA_INSTALL_DIR}/libvulkan_freedreno.so"
+      file "$MESA_INSTALL_DIR/libvulkan_freedreno.so"
 
-      echo
-      echo "===== ELF HEADER ====="
-      readelf -h \
-        "${MESA_INSTALL_DIR}/libvulkan_freedreno.so"
-
-      echo
       echo "===== SONAME / NEEDED ====="
-      readelf -d \
-        "${MESA_INSTALL_DIR}/libvulkan_freedreno.so" \
+      readelf -d "$MESA_INSTALL_DIR/libvulkan_freedreno.so" \
         | grep -E 'SONAME|NEEDED' || true
 
-      echo
       echo "===== ELF COMMENT ====="
       readelf -p .comment \
-        "${MESA_INSTALL_DIR}/libvulkan_freedreno.so" || true
+        "$MESA_INSTALL_DIR/libvulkan_freedreno.so" || true
 
-      echo
-      echo "===== MESA / TURNIP / GPU ====="
-      strings \
-        "${MESA_INSTALL_DIR}/libvulkan_freedreno.so" \
-        | grep -iE \
-          'Mesa|turnip|FD630|Adreno|KGSL|Vulkan 1\.[0-9]|tu_knl_kgsl' \
+      echo "===== TURNIP ====="
+      strings "$MESA_INSTALL_DIR/libvulkan_freedreno.so" \
+        | grep -iE 'Mesa|turnip|FD630|Adreno|KGSL|tu_knl_kgsl' \
         | sort -u \
         | head -150 || true
 
-      echo
-      echo "===== FILE SIZE ====="
-      ls -lh \
-        "${MESA_INSTALL_DIR}/libvulkan_freedreno.so"
+      echo "===== SIZE ====="
+      ls -lh "$MESA_INSTALL_DIR/libvulkan_freedreno.so"
 
-  - name: Package Turnip
+  - name: Package
     run: |
       set -eux
 
       mkdir -p package/vendor/lib64/hw
 
       cp \
-        "${MESA_INSTALL_DIR}/libvulkan_freedreno.so" \
+        "$MESA_INSTALL_DIR/libvulkan_freedreno.so" \
         package/vendor/lib64/hw/
 
       cat > package/README.txt <<EOF
-      Turnip build for Xiaomi Mi 8 / dipper
+```
 
-      GPU:
-        Qualcomm Adreno 630
+Turnip build for Xiaomi Mi 8 / dipper
 
-      Kernel interface:
-        KGSL
+GPU: Qualcomm Adreno 630
+Kernel interface: KGSL
+Android target: Android ${ANDROID_PLATFORM}
+NDK: ${ANDROID_NDK_VERSION}
 
-      Android target:
-        Android ${ANDROID_PLATFORM}
+Mesa commit:
+$(cd mesa && git rev-parse HEAD)
 
-      NDK:
-        ${ANDROID_NDK_VERSION}
+Build date:
+$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+EOF
 
-      Driver:
-        libvulkan_freedreno.so
-
-      Mesa source:
-        $(cd mesa && git rev-parse HEAD)
-
-      Build date:
-        $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-      EOF
-
+```
       tar -czf \
-        "turnip-latest-dipper-android35.tar.gz" \
+        turnip-latest-dipper.tar.gz \
         -C package .
 
-      echo
-      echo "===== PACKAGE ====="
-      ls -lh \
-        turnip-latest-dipper-android35.tar.gz
-
-  - name: Upload Turnip artifact
+  - name: Upload artifact
     uses: actions/upload-artifact@v4
     with:
-      name: turnip-latest-dipper-android35
+      name: turnip-latest-dipper
       path: |
-        turnip-latest-dipper-android35.tar.gz
+        turnip-latest-dipper.tar.gz
         install/libvulkan_freedreno.so
       if-no-files-found: error
 ```
