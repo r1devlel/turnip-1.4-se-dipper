@@ -21,7 +21,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git python3 python3-pip python3-venv ninja-build pkg-config build-essential bison flex libdrm-dev libexpat1-dev libudev-dev libvulkan-dev zlib1g-dev glslang-tools
+          sudo apt-get install -y git python3 python3-pip python3-venv ninja-build pkg-config build-essential bison flex libdrm-dev libexpat1-dev libudev-dev libvulkan-dev zlib1g-dev glslang-tools patchelf
 
       - name: Setup Python
         run: |
@@ -130,25 +130,8 @@ jobs:
           cp "$DRIVER" install/vulkan.turnip.so
 
           # Match the reference Turnip naming convention used on dipper.
-          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objcopy" \
-            --set-section-alignment .note.android.ident=4 \
-            install/vulkan.turnip.so 2>/dev/null || true
-
-          # Re-link the shared object with the reference SONAME.
-          # Keep all existing sections/symbols; only change the dynamic SONAME.
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('install/vulkan.turnip.so')
-          b = bytearray(p.read_bytes())
-          old = b'libvulkan_freedreno.so\\x00'
-          new = b'vulkan.turnip.so\\x00'
-          if old not in b:
-              raise SystemExit('original SONAME string not found')
-          if len(new) > len(old):
-              raise SystemExit('replacement SONAME is too long')
-          b[b.index(old):b.index(old)+len(old)] = new + b'\\x00' * (len(old)-len(new))
-          p.write_bytes(b)
-          PY
+          # patchelf updates the ELF dynamic SONAME instead of editing raw strings.
+          patchelf --set-soname vulkan.turnip.so install/vulkan.turnip.so
 
           file install/vulkan.turnip.so
           readelf -d install/vulkan.turnip.so | grep -E 'SONAME|NEEDED' || true
