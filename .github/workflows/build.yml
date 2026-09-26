@@ -121,29 +121,52 @@ jobs:
           . .venv/bin/activate
           meson compile -C build -j"$(nproc)"
 
-      - name: Inspect Turnip
+      - name: Inspect and normalize Turnip
         run: |
           set -eux
           DRIVER="$(find build -type f -name 'libvulkan_freedreno.so' | head -n 1)"
           test -n "$DRIVER"
           mkdir -p install
-          cp "$DRIVER" install/libvulkan_freedreno.so
-          file install/libvulkan_freedreno.so
-          readelf -d install/libvulkan_freedreno.so | grep -E 'SONAME|NEEDED' || true
-          readelf -p .comment install/libvulkan_freedreno.so || true
-          strings install/libvulkan_freedreno.so | grep -iE 'Mesa|turnip|FD630|Adreno|KGSL|tu_knl_kgsl' | sort -u | head -150 || true
-          ls -lh install/libvulkan_freedreno.so
+          cp "$DRIVER" install/vulkan.turnip.so
+
+          # Match the reference Turnip naming convention used on dipper.
+          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objcopy" \
+            --set-section-alignment .note.android.ident=4 \
+            install/vulkan.turnip.so 2>/dev/null || true
+
+          # Re-link the shared object with the reference SONAME.
+          # Keep all existing sections/symbols; only change the dynamic SONAME.
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('install/vulkan.turnip.so')
+          b = bytearray(p.read_bytes())
+          old = b'libvulkan_freedreno.so\\x00'
+          new = b'vulkan.turnip.so\\x00'
+          if old not in b:
+              raise SystemExit('original SONAME string not found')
+          if len(new) > len(old):
+              raise SystemExit('replacement SONAME is too long')
+          b[b.index(old):b.index(old)+len(old)] = new + b'\\x00' * (len(old)-len(new))
+          p.write_bytes(b)
+          PY
+
+          file install/vulkan.turnip.so
+          readelf -d install/vulkan.turnip.so | grep -E 'SONAME|NEEDED' || true
+          readelf -p .comment install/vulkan.turnip.so || true
+          strings install/vulkan.turnip.so | grep -iE 'Mesa|turnip|FD630|Adreno|KGSL|tu_knl_kgsl' | sort -u | head -150 || true
+          ls -lh install/vulkan.turnip.so
 
       - name: Package
         run: |
           set -eux
           mkdir -p package/vendor/lib64/hw
-          cp install/libvulkan_freedreno.so package/vendor/lib64/hw/
+          cp install/vulkan.turnip.so package/vendor/lib64/hw/
           {
             echo "Turnip build for Xiaomi Mi 8 / dipper"
             echo
             echo "GPU: Qualcomm Adreno 630"
             echo "Kernel interface: KGSL"
+            echo "Driver filename/SONAME: vulkan.turnip.so"
             echo "Android target: Android ${ANDROID_PLATFORM}"
             echo "NDK: ${ANDROID_NDK_VERSION}"
             echo
@@ -161,5 +184,5 @@ jobs:
           name: turnip-latest-dipper
           path: |
             turnip-latest-dipper.tar.gz
-            install/libvulkan_freedreno.so
+            install/vulkan.turnip.so
           if-no-files-found: error
