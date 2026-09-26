@@ -60,6 +60,7 @@ jobs:
           "$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang" --version
           "$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang++" --version
           "$TOOLCHAIN/ld.lld" --version
+          "$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang++" --help 2>&1 | grep -E -- '-static-libc\\+\\+' || true
           cat "$ANDROID_NDK_HOME/source.properties"
 
       - name: Clone latest Mesa
@@ -93,6 +94,9 @@ jobs:
             '' \
             '[properties]' \
             "sys_root = '$SYSROOT'" \
+            '' \
+            '[built-in options]' \
+            "cpp_link_args = ['-static-libc++']" \
             > android-aarch64.ini
 
           cat android-aarch64.ini
