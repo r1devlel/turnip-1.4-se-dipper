@@ -62,6 +62,25 @@ jobs:
           "$TOOLCHAIN/ld.lld" --version
           cat "$ANDROID_NDK_HOME/source.properties"
 
+      - name: Test static C++ runtime support
+        run: |
+          set -eux
+          TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          SYSROOT="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          CXX="$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang++"
+
+          echo "Checking NDK C++ runtime archives:"
+          find "$ANDROID_NDK_HOME" -type f \( -name 'libc++_static.a' -o -name 'libc++abi.a' \) -print | sort
+
+          echo "Testing -static-libstdc++ with the exact Android Clang toolchain:"
+          printf 'int main() { return 0; }\n' | "$CXX" \
+            --sysroot="$SYSROOT" \
+            -static-libstdc++ \
+            -x c++ - -o /tmp/static-cxx-test
+
+          file /tmp/static-cxx-test
+          readelf -d /tmp/static-cxx-test | grep -E 'NEEDED|SONAME' || true
+
       - name: Clone latest Mesa
         run: |
           set -eux
