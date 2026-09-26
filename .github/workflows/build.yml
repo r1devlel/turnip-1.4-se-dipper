@@ -61,24 +61,26 @@ jobs:
           set -eux
           TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
           SYSROOT="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-          cat > android-aarch64.ini <<EOF
-[binaries]
-c = '$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang'
-cpp = '$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang++'
-ar = '$TOOLCHAIN/llvm-ar'
-strip = '$TOOLCHAIN/llvm-strip'
-ranlib = '$TOOLCHAIN/llvm-ranlib'
-ld = '$TOOLCHAIN/ld.lld'
 
-[host_machine]
-system = 'android'
-cpu_family = 'aarch64'
-cpu = 'arm64'
-endian = 'little'
+          printf '%s\n' \
+            '[binaries]' \
+            "c = '$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang'" \
+            "cpp = '$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang++'" \
+            "ar = '$TOOLCHAIN/llvm-ar'" \
+            "strip = '$TOOLCHAIN/llvm-strip'" \
+            "ranlib = '$TOOLCHAIN/llvm-ranlib'" \
+            "ld = '$TOOLCHAIN/ld.lld'" \
+            '' \
+            '[host_machine]' \
+            "system = 'android'" \
+            "cpu_family = 'aarch64'" \
+            "cpu = 'arm64'" \
+            "endian = 'little'" \
+            '' \
+            '[properties]' \
+            "sys_root = '$SYSROOT'" \
+            > android-aarch64.ini
 
-[properties]
-sys_root = '$SYSROOT'
-EOF
           cat android-aarch64.ini
 
       - name: Configure Mesa
