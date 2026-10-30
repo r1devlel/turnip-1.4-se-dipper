@@ -8,11 +8,23 @@ on:
 
 jobs:
   build:
+    name: build (${{ matrix.variant }})
     runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - vk13-stable
+          - vk14-experimental
 
     env:
       ANDROID_NDK_VERSION: "28.0.13004108"
       ANDROID_PLATFORM: "35"
+      # Pin Mesa so the driver is reproducible. Update deliberately.
+      MESA_REPO: "https://gitlab.freedesktop.org/mesa/mesa.git"
+      MESA_REF: "bebbaf4961a99a51a6567db06d6141a1cc6ec621"
+      VARIANT: "${{ matrix.variant }}"
 
     steps:
       - name: Checkout
@@ -21,7 +33,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git python3 python3-pip python3-venv ninja-build pkg-config build-essential bison flex libdrm-dev libexpat1-dev libudev-dev libvulkan-dev zlib1g-dev glslang-tools patchelf
+          sudo apt-get install -y git python3 python3-pip python3-venv ninja-build pkg-config build-essential bison flex libdrm-dev libexpat1-dev libudev-dev libvulkan-dev zlib1g-dev glslang-tools patchelf patch
 
       - name: Setup Python
         run: |
@@ -62,32 +74,22 @@ jobs:
           "$TOOLCHAIN/ld.lld" --version
           cat "$ANDROID_NDK_HOME/source.properties"
 
-      - name: Test static C++ runtime support
+      - name: Fetch pinned Mesa
         run: |
           set -eux
-          TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          SYSROOT="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-          CXX="$TOOLCHAIN/aarch64-linux-android${ANDROID_PLATFORM}-clang++"
+          git init mesa
+          git -C mesa remote add origin "$MESA_REPO"
+          git -C mesa fetch --depth=1 origin "$MESA_REF"
+          git -C mesa checkout --detach FETCH_HEAD
+          git -C mesa rev-parse HEAD
+          grep -n "MESA_VERSION" mesa/meson.build | head -10 || true
 
-          echo "Checking NDK C++ runtime archives:"
-          find "$ANDROID_NDK_HOME" -type f \( -name 'libc++_static.a' -o -name 'libc++abi.a' \) -print | sort
-
-          echo "Testing -static-libstdc++ with the exact Android Clang toolchain:"
-          printf 'int main() { return 0; }\n' | "$CXX" \
-            --sysroot="$SYSROOT" \
-            -static-libstdc++ \
-            -x c++ - -o /tmp/static-cxx-test
-
-          file /tmp/static-cxx-test
-          readelf -d /tmp/static-cxx-test | grep -E 'NEEDED|SONAME' || true
-
-      - name: Clone latest Mesa
+      - name: Apply A630 Vulkan 1.4 patch
+        if: matrix.variant == 'vk14-experimental'
         run: |
           set -eux
-          git clone --depth=1 https://gitlab.freedesktop.org/mesa/mesa.git mesa
-          cd mesa
-          git rev-parse HEAD
-          grep -n "MESA_VERSION" meson.build | head -10 || true
+          patch -p1 -d mesa < patches/0001-tu-expose-vk14-on-a630.patch
+          grep -n -A4 'props->apiVersion' mesa/src/freedreno/vulkan/tu_device.cc
 
       - name: Prepare Android cross file
         run: |
@@ -146,10 +148,15 @@ jobs:
       - name: Inspect and normalize Turnip
         run: |
           set -eux
+          TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
           DRIVER="$(find build -type f -name 'libvulkan_freedreno.so' | head -n 1)"
           test -n "$DRIVER"
           mkdir -p install
           cp "$DRIVER" install/vulkan.turnip.so
+
+          # Keep the size closer to the reference Android driver and avoid
+          # shipping local symbols in the runtime artifact.
+          "$TOOLCHAIN/llvm-strip" --strip-unneeded install/vulkan.turnip.so
 
           # Match the reference Turnip naming convention used on dipper.
           # patchelf updates the ELF dynamic SONAME instead of editing raw strings.
@@ -161,6 +168,16 @@ jobs:
           strings install/vulkan.turnip.so | grep -iE 'Mesa|turnip|FD630|Adreno|KGSL|tu_knl_kgsl' | sort -u | head -150 || true
           ls -lh install/vulkan.turnip.so
 
+          case "$VARIANT" in
+            vk14-*)
+              grep -q 'pdevice->info->chip == 630' mesa/src/freedreno/vulkan/tu_device.cc
+              echo "A630 Vulkan 1.4 patch present"
+              ;;
+            *)
+              echo "Upstream Vulkan 1.3 build"
+              ;;
+          esac
+
       - name: Package
         run: |
           set -eux
@@ -169,6 +186,7 @@ jobs:
           {
             echo "Turnip build for Xiaomi Mi 8 / dipper"
             echo
+            echo "Variant: ${VARIANT}"
             echo "GPU: Qualcomm Adreno 630"
             echo "Kernel interface: KGSL"
             echo "Driver filename/SONAME: vulkan.turnip.so"
@@ -180,14 +198,25 @@ jobs:
             echo
             echo "Build date:"
             date -u '+%Y-%m-%d %H:%M:%S UTC'
+            echo
+            if [ "$VARIANT" = "vk14-experimental" ]; then
+              echo "This variant advertises Vulkan 1.4 on A630 for HyperOS 4"
+              echo "glass rendering. It is experimental: upstream keeps A6xx at"
+              echo "Vulkan 1.3 because not every 1.4 limit is met."
+            else
+              echo "This is the upstream-compatible Vulkan 1.3 build."
+              echo "Use it for games or as a fallback if the 1.4 path is unstable."
+            fi
           } > package/README.txt
-          tar -czf turnip-latest-dipper.tar.gz -C package .
+          tar -czf "turnip-${VARIANT}-dipper.tar.gz" -C package .
+          sha256sum "turnip-${VARIANT}-dipper.tar.gz" install/vulkan.turnip.so > "turnip-${VARIANT}-dipper.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: turnip-latest-dipper
+          name: turnip-${{ matrix.variant }}-dipper
           path: |
-            turnip-latest-dipper.tar.gz
+            turnip-${{ matrix.variant }}-dipper.tar.gz
+            turnip-${{ matrix.variant }}-dipper.sha256
             install/vulkan.turnip.so
           if-no-files-found: error
