@@ -170,7 +170,7 @@ jobs:
 
           case "$VARIANT" in
             vk14-*)
-              grep -q 'pdevice->info->chip == 630' mesa/src/freedreno/vulkan/tu_device.cc
+              grep -q 'fd_dev_gpu_id(&pdevice->dev_id) == 630' mesa/src/freedreno/vulkan/tu_device.cc
               echo "A630 Vulkan 1.4 patch present"
               ;;
             *)
