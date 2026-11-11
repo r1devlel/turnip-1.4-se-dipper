@@ -174,9 +174,15 @@ jobs:
           mkdir -p install
           cp "$DRIVER" install/vulkan.turnip.so
 
+          echo "=== pre-strip dynamic symbols ==="
+          "$TOOLCHAIN/llvm-readelf" --dyn-syms "$DRIVER" 2>/dev/null | grep -iE 'vk_icd|vkGetInstanceProcAddr|vkCreateInstance' || true
+
           # Keep the size closer to the reference Android driver and avoid
           # shipping local symbols in the runtime artifact.
           "$TOOLCHAIN/llvm-strip" --strip-unneeded install/vulkan.turnip.so
+
+          echo "=== post-strip dynamic symbols ==="
+          "$TOOLCHAIN/llvm-readelf" --dyn-syms install/vulkan.turnip.so 2>/dev/null | grep -iE 'vk_icd|vkGetInstanceProcAddr|vkCreateInstance' || true
 
           # Match the reference Turnip naming convention used on dipper.
           # patchelf updates the ELF dynamic SONAME instead of editing raw strings.
