@@ -15,15 +15,16 @@ jobs:
       fail-fast: false
       matrix:
         variant:
+          - os-v14
           - vk13-stable
-          - vk14-experimental
 
     env:
-      ANDROID_NDK_VERSION: "28.0.13004108"
-      ANDROID_PLATFORM: "35"
-      # Pin Mesa so the driver is reproducible. Update deliberately.
+      ANDROID_NDK_VERSION: "30.0.16248370"
+      ANDROID_PLATFORM: "37"
+      # Latest Mesa main as of 2026-11-11 (Mesa 27.0.0-devel).
+      # Pin the commit so the Android 17 build is reproducible.
       MESA_REPO: "https://gitlab.freedesktop.org/mesa/mesa.git"
-      MESA_REF: "bebbaf4961a99a51a6567db06d6141a1cc6ec621"
+      MESA_REF: "e04357c464296e6b0a0bda612d5b2fb5deb6fa82"
       VARIANT: "${{ matrix.variant }}"
 
     steps:
@@ -85,7 +86,7 @@ jobs:
           grep -n "MESA_VERSION" mesa/meson.build | head -10 || true
 
       - name: Apply A630 Vulkan 1.4 patch
-        if: matrix.variant == 'vk14-experimental'
+        if: matrix.variant == 'os-v14'
         run: |
           set -eux
           patch -p1 -d mesa < patches/0001-tu-expose-vk14-on-a630.patch
@@ -125,19 +126,37 @@ jobs:
         run: |
           set -eux
           . .venv/bin/activate
-          meson setup build mesa \
-            --cross-file android-aarch64.ini \
-            --prefix=/system \
-            --libdir=lib64 \
-            --buildtype=release \
-            -Dplatforms=android \
-            -Dplatform-sdk-version="${ANDROID_PLATFORM}" \
-            -Dandroid-stub=true \
-            -Dandroid-libbacktrace=disabled \
-            -Degl=disabled \
-            -Dgallium-drivers= \
-            -Dvulkan-drivers=freedreno \
+
+          MESON_ARGS=(
+            --cross-file android-aarch64.ini
+            --prefix=/system
+            --libdir=lib64
+            --buildtype=release
+            -Dplatforms=android
+            -Dplatform-sdk-version="${ANDROID_PLATFORM}"
+            -Dandroid-stub=true
+            -Dandroid-libbacktrace=disabled
+            -Dandroid-libperfetto=disabled
+            -Degl=disabled
+            -Dgles1=disabled
+            -Dgles2=disabled
+            -Dopengl=false
+            -Dglx=disabled
+            -Dgbm=disabled
+            -Dgallium-drivers=
+            -Dvulkan-drivers=freedreno
             -Dfreedreno-kmds=kgsl
+            -Dllvm=disabled
+            -Dzstd=disabled
+            -Dshader-cache=enabled
+            -Dbuild-tests=false
+          )
+
+          if [ "$VARIANT" = "os-v14" ]; then
+            MESON_ARGS+=(-Db_lto=true)
+          fi
+
+          meson setup build mesa "${MESON_ARGS[@]}"
 
       - name: Build Turnip
         run: |
@@ -169,7 +188,7 @@ jobs:
           ls -lh install/vulkan.turnip.so
 
           case "$VARIANT" in
-            vk14-*)
+            os-v14)
               grep -q 'fd_dev_gpu_id(&pdevice->dev_id) == 630' mesa/src/freedreno/vulkan/tu_device.cc
               echo "A630 Vulkan 1.4 patch present"
               ;;
@@ -190,7 +209,7 @@ jobs:
             echo "GPU: Qualcomm Adreno 630"
             echo "Kernel interface: KGSL"
             echo "Driver filename/SONAME: vulkan.turnip.so"
-            echo "Android target: Android ${ANDROID_PLATFORM}"
+            echo "Android target: Android ${ANDROID_PLATFORM} (API ${ANDROID_PLATFORM})"
             echo "NDK: ${ANDROID_NDK_VERSION}"
             echo
             echo "Mesa commit:"
@@ -199,12 +218,14 @@ jobs:
             echo "Build date:"
             date -u '+%Y-%m-%d %H:%M:%S UTC'
             echo
-            if [ "$VARIANT" = "vk14-experimental" ]; then
-              echo "This variant advertises Vulkan 1.4 on A630 for HyperOS 4"
-              echo "glass rendering. It is experimental: upstream keeps A6xx at"
-              echo "Vulkan 1.3 because not every 1.4 limit is met."
+            if [ "$VARIANT" = "os-v14" ]; then
+              echo "Android 17 / API 37 OS-optimized build."
+              echo "Vulkan-only, KGSL-only, LTO, stripped, no GL/EGL/tools/tests."
+              echo "Advertises Vulkan 1.4 on A630 for HyperOS 4 glass rendering."
+              echo "Experimental: upstream keeps A6xx at Vulkan 1.3 because not"
+              echo "every 1.4 limit is met."
             else
-              echo "This is the upstream-compatible Vulkan 1.3 build."
+              echo "Upstream-compatible Vulkan 1.3 build."
               echo "Use it for games or as a fallback if the 1.4 path is unstable."
             fi
           } > package/README.txt
