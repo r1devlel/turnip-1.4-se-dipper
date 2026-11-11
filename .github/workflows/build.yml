@@ -154,7 +154,7 @@ jobs:
           )
 
           if [ "$VARIANT" = "os-v14" ]; then
-            MESON_ARGS+=(-Db_lto=true)
+            MESON_ARGS+=(-Dvulkan-beta=false)
           fi
 
           meson setup build mesa "${MESON_ARGS[@]}"
@@ -221,7 +221,7 @@ jobs:
             echo
             if [ "$VARIANT" = "os-v14" ]; then
               echo "Android 17 / API 37 OS-optimized build."
-              echo "Vulkan-only, KGSL-only, LTO, stripped, no GL/EGL/tools/tests."
+              echo "Vulkan-only, KGSL-only, release -O3, stripped, no GL/EGL/tools/tests."
               echo "Advertises Vulkan 1.4 on A630 for HyperOS 4 glass rendering."
               echo "Experimental: upstream keeps A6xx at Vulkan 1.3 because not"
               echo "every 1.4 limit is met."
