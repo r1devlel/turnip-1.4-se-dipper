@@ -60,11 +60,12 @@ jobs:
 
           yes | "$SDKMANAGER" --licenses || true
 
-      - name: Install Android platform and NDK
+      - name: Install Android NDK
         run: |
           set -eux
-          "$SDKMANAGER" "platforms;android-${ANDROID_PLATFORM}" "ndk;${ANDROID_NDK_VERSION}"
+          "$SDKMANAGER" "ndk;${ANDROID_NDK_VERSION}"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+          test -x "$ANDROID_HOME/ndk/${ANDROID_NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${ANDROID_PLATFORM}-clang"
 
       - name: Verify Android toolchain
         run: |
