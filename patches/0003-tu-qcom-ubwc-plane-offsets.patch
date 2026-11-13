@@ -1,0 +1,27 @@
+--- a/src/freedreno/vulkan/tu_image.cc	2026-11-13 22:23:19.414805140 +0700
++++ b/src/freedreno/vulkan/tu_image.cc	2026-11-13 22:23:38.038140328 +0700
+@@ -807,6 +807,24 @@
+          return vk_error(device, VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT);
+       }
+ 
++      /* Qualcomm gralloc reports explicit plane offsets as the start of the
++       * data plane, while fdl6_layout_image treats them as the start of the
++       * UBWC metadata plane.  Move the metadata and data planes back by the
++       * metadata size so the data plane lands at the gralloc offset.
++       */
++      if (plane_layouts && modifier == DRM_FORMAT_MOD_QCOM_COMPRESSED &&
++          layout->ubwc && image->vk.mip_levels == 1) {
++         uint64_t metadata_size = layout->ubwc_layer_size;
++         if (metadata_size > 0 &&
++             layout->ubwc_slices[0].offset >= metadata_size) {
++            for (uint32_t level = 0; level < image->vk.mip_levels; level++) {
++               layout->slices[level].offset -= metadata_size;
++               layout->ubwc_slices[level].offset -= metadata_size;
++            }
++            layout->size -= metadata_size;
++         }
++      }
++
+       if (TU_DEBUG(LAYOUT))
+          fdl_dump_layout(layout);
+ 

@@ -1,0 +1,78 @@
+--- a/src/util/u_gralloc/u_gralloc_fallback.c	2026-11-13 22:23:19.364805135 +0700
++++ b/src/util/u_gralloc/u_gralloc_fallback.c	2026-11-13 22:23:19.551471820 +0700
+@@ -109,6 +109,10 @@
+    if (hnd->handle->numFds == 0)
+       return -EINVAL;
+ 
++   out->modifier = DRM_FORMAT_MOD_INVALID;
++   if (hnd->hal_format == HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS_UBWC)
++      out->modifier = DRM_FORMAT_MOD_QCOM_COMPRESSED;
++
+    if (is_hal_format_yuv(hnd->hal_format)) {
+       int ret = fallback_gralloc_get_yuv_info(gralloc, hnd, out);
+       /*
+@@ -142,7 +146,6 @@
+    }
+ 
+    out->drm_fourcc = drm_fourcc;
+-   out->modifier = DRM_FORMAT_MOD_INVALID;
+    out->num_planes = num_planes;
+    out->fds[0] = hnd->handle->data[0];
+    out->strides[0] = stride;
+diff -ruN orig/src/util/u_gralloc/u_gralloc_internal.c new/src/util/u_gralloc/u_gralloc_internal.c
+--- a/src/util/u_gralloc/u_gralloc_internal.c	2026-11-13 22:23:19.364805135 +0700
++++ b/src/util/u_gralloc/u_gralloc_internal.c	2026-11-13 22:23:38.038140328 +0700
+@@ -44,6 +44,9 @@
+    {HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED, YCrCb, 1, DRM_FORMAT_YVU420},
+    {HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED, YCrCb, 1, DRM_FORMAT_AYUV},
+    {HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED, YCrCb, 1, DRM_FORMAT_XYUV8888},
++   /* Qualcomm Venus video buffers (NV12, optionally UBWC-compressed). */
++   {HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS, YCbCr, 2, DRM_FORMAT_NV12},
++   {HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS_UBWC, YCbCr, 2, DRM_FORMAT_NV12},
+ };
+ 
+ static int
+@@ -130,6 +133,9 @@
+       return DRM_FORMAT_ABGR16161616F;
+    case HAL_PIXEL_FORMAT_RGBA_1010102:
+       return DRM_FORMAT_ABGR2101010;
++   case HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS:
++   case HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS_UBWC:
++      return DRM_FORMAT_NV12;
+    /* DRM has no fourcc for depth/stencil; map to size-equivalent single/
+     * dual-channel placeholders so AHB import flows can proceed.  Drivers
+     * resolve the real format from the VkImage create info, not from this
+diff -ruN orig/src/util/u_gralloc/u_gralloc_internal.h new/src/util/u_gralloc/u_gralloc_internal.h
+--- a/src/util/u_gralloc/u_gralloc_internal.h	2026-11-13 22:23:19.364805135 +0700
++++ b/src/util/u_gralloc/u_gralloc_internal.h	2026-11-13 22:23:19.551471820 +0700
+@@ -14,6 +14,16 @@
+ 
+ #include "u_gralloc.h"
+ 
++/* Qualcomm vendor HAL pixel formats.  These are not part of the NDK
++ * gralloc.h, but are used by the Venus video decoder on sdm845.
++ */
++#ifndef HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS
++#define HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS 0x7FA30C04
++#endif
++#ifndef HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS_UBWC
++#define HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS_UBWC 0x7FA30C06
++#endif
++
+ struct u_gralloc_ops {
+    int (*get_buffer_basic_info)(struct u_gralloc *gralloc,
+                                 struct u_gralloc_buffer_handle *hnd,
+diff -ruN orig/src/util/u_gralloc/u_gralloc_qcom.c new/src/util/u_gralloc/u_gralloc_qcom.c
+--- a/src/util/u_gralloc/u_gralloc_qcom.c	2026-11-13 22:23:19.364805135 +0700
++++ b/src/util/u_gralloc/u_gralloc_qcom.c	2026-11-13 22:23:19.551471820 +0700
+@@ -96,7 +96,9 @@
+    /* This may fail since some earlier MSM  grallocs do not support this
+     * perform call
+     */
+-   if (!err && out_flag)
++   if (hnd->hal_format == HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS_UBWC)
++      out->modifier = DRM_FORMAT_MOD_QCOM_COMPRESSED;
++   else if (!err && out_flag)
+       out->modifier = DRM_FORMAT_MOD_QCOM_COMPRESSED;
+    else
+       out->modifier = DRM_FORMAT_MOD_LINEAR;

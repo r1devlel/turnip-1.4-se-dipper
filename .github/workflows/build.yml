@@ -86,6 +86,12 @@ jobs:
           git -C mesa rev-parse HEAD
           grep -n "MESA_VERSION" mesa/meson.build | head -10 || true
 
+      - name: Apply Venus UBWC import fix
+        run: |
+          set -eux
+          patch -p1 -d mesa < patches/0002-u-gralloc-venus-ubwc.patch
+          patch -p1 -d mesa < patches/0003-tu-qcom-ubwc-plane-offsets.patch
+
       - name: Apply A630 Vulkan 1.4 patch
         if: matrix.variant == 'os-v14'
         run: |
