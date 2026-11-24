@@ -21,6 +21,11 @@ jobs:
             v14: true
             tune: true
             venus: true
+          - variant: os-v14-latest
+            mesa_ref: main
+            v14: true
+            tune: true
+            venus: true
           - variant: vk13-latest
             mesa_ref: main
             v14: false
