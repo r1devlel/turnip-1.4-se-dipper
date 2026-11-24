@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - perf/launcher-tuning
 
 jobs:
   build:
@@ -14,17 +15,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant:
-          - os-v14
-          - vk13-stable
+        include:
+          - variant: os-v14-lto
+            mesa_ref: e04357c464296e6b0a0bda612d5b2fb5deb6fa82
+            v14: true
+            tune: true
+            venus: true
+          - variant: vk13-latest
+            mesa_ref: main
+            v14: false
+            tune: true
+            venus: true
 
     env:
       ANDROID_NDK_VERSION: "30.0.16248370"
       ANDROID_PLATFORM: "37"
-      # Latest Mesa main as of 2026-11-11 (Mesa 27.0.0-devel).
-      # Pin the commit so the Android 17 build is reproducible.
       MESA_REPO: "https://gitlab.freedesktop.org/mesa/mesa.git"
-      MESA_REF: "e04357c464296e6b0a0bda612d5b2fb5deb6fa82"
+      MESA_REF: "${{ matrix.mesa_ref }}"
       VARIANT: "${{ matrix.variant }}"
 
     steps:
@@ -76,7 +83,7 @@ jobs:
           "$TOOLCHAIN/ld.lld" --version
           cat "$ANDROID_NDK_HOME/source.properties"
 
-      - name: Fetch pinned Mesa
+      - name: Fetch Mesa
         run: |
           set -eux
           git init mesa
@@ -84,16 +91,18 @@ jobs:
           git -C mesa fetch --depth=1 origin "$MESA_REF"
           git -C mesa checkout --detach FETCH_HEAD
           git -C mesa rev-parse HEAD
+          git -C mesa log -1 --format='%H %cs %s'
           grep -n "MESA_VERSION" mesa/meson.build | head -10 || true
 
       - name: Apply Venus UBWC import fix
+        if: matrix.venus
         run: |
           set -eux
           patch -p1 -d mesa < patches/0002-u-gralloc-venus-ubwc.patch
           patch -p1 -d mesa < patches/0003-tu-qcom-ubwc-plane-offsets.patch
 
       - name: Apply A630 Vulkan 1.4 patch
-        if: matrix.variant == 'os-v14'
+        if: matrix.v14
         run: |
           set -eux
           patch -p1 -d mesa < patches/0001-tu-expose-vk14-on-a630.patch
@@ -159,7 +168,16 @@ jobs:
             -Dbuild-tests=false
           )
 
-          if [ "$VARIANT" = "os-v14" ]; then
+          if [ "${{ matrix.tune }}" = "true" ]; then
+            MESON_ARGS+=(
+              -Db_lto=true
+              -Db_lto_mode=thin
+              -Dc_args=-O3,-mcpu=cortex-a75,-fno-semantic-interposition
+              -Dcpp_args=-O3,-mcpu=cortex-a75,-fno-semantic-interposition
+            )
+          fi
+
+          if [ "${{ matrix.v14 }}" = "true" ]; then
             MESON_ARGS+=(-Dvulkan-beta=false)
           fi
 
@@ -201,7 +219,7 @@ jobs:
           ls -lh install/vulkan.turnip.so
 
           case "$VARIANT" in
-            os-v14)
+            os-v14*)
               grep -q 'fd_dev_gpu_id(&pdevice->dev_id) == 630' mesa/src/freedreno/vulkan/tu_device.cc
               echo "A630 Vulkan 1.4 patch present"
               ;;
@@ -231,7 +249,9 @@ jobs:
             echo "Build date:"
             date -u '+%Y-%m-%d %H:%M:%S UTC'
             echo
-            if [ "$VARIANT" = "os-v14" ]; then
+            echo "Tuning: thin LTO, release -O3, -mcpu=cortex-a75, -fno-semantic-interposition"
+            echo
+            if [ "${{ matrix.v14 }}" = "true" ]; then
               echo "Android 17 / API 37 OS-optimized build."
               echo "Vulkan-only, KGSL-only, release -O3, stripped, no GL/EGL/tools/tests."
               echo "Advertises Vulkan 1.4 on A630 for HyperOS 4 glass rendering."
