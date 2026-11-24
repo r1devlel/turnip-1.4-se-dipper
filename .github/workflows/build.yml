@@ -16,20 +16,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - variant: os-v14-tuned
+          - variant: os-v14-latest-safe
+            mesa_ref: main
+            v14: true
+            venus: true
+          - variant: os-v14-tuned-safe
             mesa_ref: e04357c464296e6b0a0bda612d5b2fb5deb6fa82
             v14: true
-            tune: true
             venus: true
-          - variant: os-v14-latest
-            mesa_ref: main
-            v14: true
-            tune: true
-            venus: true
-          - variant: vk13-latest
+          - variant: vk13-latest-safe
             mesa_ref: main
             v14: false
-            tune: true
             venus: true
 
     env:
@@ -135,8 +132,8 @@ jobs:
             "endian = 'little'" \
             '' \
             '[built-in options]' \
-            "c_args = ['-O3', '-mcpu=cortex-a75', '-fno-semantic-interposition']" \
-            "cpp_args = ['-O3', '-mcpu=cortex-a75', '-fno-semantic-interposition']" \
+            "c_args = ['-O3', '-march=armv8.1-a', '-mtune=cortex-a75', '-fno-semantic-interposition']" \
+            "cpp_args = ['-O3', '-march=armv8.1-a', '-mtune=cortex-a75', '-fno-semantic-interposition']" \
             "cpp_link_args = ['-static-libstdc++']" \
             '' \
             '[properties]' \
@@ -216,6 +213,17 @@ jobs:
           strings install/vulkan.turnip.so | grep -iE 'Mesa|turnip|FD630|Adreno|KGSL|tu_knl_kgsl' | sort -u | head -150 || true
           ls -lh install/vulkan.turnip.so
 
+          # SDM845 (Kryo 385) does not implement the ARMv8.2 dot-product
+          # extension.  -mcpu=cortex-a75 made clang emit UDOT here and caused
+          # SIGILL in com.miui.home.  -march=armv8.1-a keeps the baseline ISA,
+          # and this guard prevents an unsafe artifact from being packaged.
+          if "$TOOLCHAIN/llvm-objdump" -d --no-show-raw-insn install/vulkan.turnip.so \
+              | grep -qE '\b(udot|sdot|bfdot|ldapr|bfmmla|smmla|ummla)\b'; then
+            echo "ERROR: SDM845-incompatible instruction found" >&2
+            exit 1
+          fi
+          echo "SDM845-safe instruction scan passed"
+
           case "$VARIANT" in
             os-v14*)
               grep -q 'fd_dev_gpu_id(&pdevice->dev_id) == 630' mesa/src/freedreno/vulkan/tu_device.cc
@@ -247,7 +255,8 @@ jobs:
             echo "Build date:"
             date -u '+%Y-%m-%d %H:%M:%S UTC'
             echo
-            echo "Tuning: release -O3, -mcpu=cortex-a75, -fno-semantic-interposition (Mesa does not support LTO)"
+            echo "Tuning: release -O3, -march=armv8.1-a, -mtune=cortex-a75, -fno-semantic-interposition"
+            echo "Safety: no ARMv8.2 dot-product/RCpc instructions (SDM845-safe)"
             echo
             if [ "${{ matrix.v14 }}" = "true" ]; then
               echo "Android 17 / API 37 OS-optimized build."
