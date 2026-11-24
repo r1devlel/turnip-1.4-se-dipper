@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - variant: os-v14-lto
+          - variant: os-v14-tuned
             mesa_ref: e04357c464296e6b0a0bda612d5b2fb5deb6fa82
             v14: true
             tune: true
@@ -170,13 +170,6 @@ jobs:
             -Dbuild-tests=false
           )
 
-          if [ "${{ matrix.tune }}" = "true" ]; then
-            MESON_ARGS+=(
-              -Db_lto=true
-              -Db_lto_mode=thin
-            )
-          fi
-
           if [ "${{ matrix.v14 }}" = "true" ]; then
             MESON_ARGS+=(-Dvulkan-beta=false)
           fi
@@ -249,7 +242,7 @@ jobs:
             echo "Build date:"
             date -u '+%Y-%m-%d %H:%M:%S UTC'
             echo
-            echo "Tuning: thin LTO, release -O3, -mcpu=cortex-a75, -fno-semantic-interposition"
+            echo "Tuning: release -O3, -mcpu=cortex-a75, -fno-semantic-interposition (Mesa does not support LTO)"
             echo
             if [ "${{ matrix.v14 }}" = "true" ]; then
               echo "Android 17 / API 37 OS-optimized build."
