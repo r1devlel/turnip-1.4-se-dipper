@@ -130,6 +130,8 @@ jobs:
             "endian = 'little'" \
             '' \
             '[built-in options]' \
+            "c_args = ['-O3', '-mcpu=cortex-a75', '-fno-semantic-interposition']" \
+            "cpp_args = ['-O3', '-mcpu=cortex-a75', '-fno-semantic-interposition']" \
             "cpp_link_args = ['-static-libstdc++']" \
             '' \
             '[properties]' \
@@ -172,8 +174,6 @@ jobs:
             MESON_ARGS+=(
               -Db_lto=true
               -Db_lto_mode=thin
-              -Dc_args=-O3,-mcpu=cortex-a75,-fno-semantic-interposition
-              -Dcpp_args=-O3,-mcpu=cortex-a75,-fno-semantic-interposition
             )
           fi
 
